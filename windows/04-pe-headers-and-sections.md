@@ -78,7 +78,7 @@ Let's examine those two fields:
        $$\text{0x10000} + (\text{0xF0} \times 64\text{ bytes}) = \text{0x10000} + \text{0x3C00} = \textbf{0x13C00} \quad (\text{Overshot by 15,120 bytes! Crash!})$$
      - **RIGHT (`(BYTE*)baseAddr + dosHeader->e_lfanew`):**
        Because `sizeof(BYTE)` (`unsigned char`) is **always `1` byte**, adding `0xF0` to a `BYTE*` moves forward by `0xF0 * 1` bytes:
-       $$\text{0x10000} + (\text{0xF0} \times 1\text{ byte}) = \textbf{0x100F0} \quad (\text{Exact address of IMAGE\_NT\_HEADERS64!})$$
+       $$\text{0x10000} + (\text{0xF0} \times 1\text{ byte}) = \textbf{0x100F0} \quad (\text{Exact address of the NT Headers!})$$
      - **Rule of Thumb:** Whenever a PE field gives you a byte offset (`e_lfanew` or any `RVA`), **always** add it to a **`BYTE*`** (or `ULONG_PTR` / `uintptr_t`) base address, never to a `struct*`!
 
 ---
