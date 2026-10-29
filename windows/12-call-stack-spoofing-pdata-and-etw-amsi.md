@@ -624,8 +624,8 @@ Look at the bottom-right stack pane: `[0x000000FF8B8FFA18]` (`RSP`) holds **`ker
 ![x64dbg Paused on syscall Inside ntdll.dll Showing Spoofed kernelbase.SleepEx+2A4 Frame at RSP](assets/lab-4.3/03-x64dbg-ntdll-syscall-spoofed-rsp-sleepex.png)
 
 #### 4. Live Unwound `Call Stack` Tab in x64dbg (Seamless `.pdata` Unwinding!)
-Because our synthetic frame size (`0x68`) matches `SleepEx`'s `.pdata` `UNWIND_INFO` entry to the exact byte, `x64dbg` unwinds cleanly through `kernelbase.SleepEx+2A4` (`Size: 70` hex = `0x68 + 8`) right back to `main.main+423` $\rightarrow$ `BaseThreadInitThunk` $\rightarrow$ `RtlUserThreadStart`:
-![x64dbg Call Stack Tab Showing Seamless Unwinding Through Spoofed kernelbase.SleepEx+2A4 Frame](assets/lab-4.3/04-x64dbg-clean-unwound-call-stack-tab.png)
+Breaking directly on `0x00007FFEF1162052` (`ntdll.NtAllocateVirtualMemory+12`) and inspecting `x64dbg`'s `Call Stack` tab shows the exact spoofed call chain—`ntdll.NtAllocateVirtualMemory+12` $\rightarrow$ **`kernelbase.SleepEx+2A4`** (`Size: 70` hex = `0x68` synthetic frame + `0x08` return address) $\rightarrow$ `main.main+423` $\rightarrow$ `BaseThreadInitThunk` $\rightarrow$ `RtlUserThreadStart`:
+![x64dbg Call Stack Tab Showing Seamless Unwinding From ntdll.NtAllocateVirtualMemory+12 Through Spoofed kernelbase.SleepEx+2A4 Frame](assets/lab-4.3/04-x64dbg-clean-unwound-call-stack-tab.png)
 
 #### 5. Returning From `ntdll.dll` Into `Module: kernelbase.dll` (`FF 23` — `jmp qword ptr ds:[rbx]`)
 Stepping past `ntdll!NtAllocateVirtualMemory`'s `ret` pops `0x00007FFEEE98BBD4` and lands inside `kernelbase.dll` (`RAX = 0` `STATUS_SUCCESS`) right on `jmp qword ptr ds:[rbx]`:
@@ -634,4 +634,12 @@ Stepping past `ntdll!NtAllocateVirtualMemory`'s `ret` pops `0x00007FFEEE98BBD4` 
 #### 6. Landing at `RestoreAfterSyscall` (`add rsp, 0x68` & Clean Return to `main()`)
 One step (`F7`) later, `kernelbase.dll`'s `jmp qword ptr ds:[rbx]` teleports execution back to `RestoreAfterSyscall` (`0x00007FF73FD68846`), which deallocates the `0x68`-byte synthetic frame, restores `RBX`, and returns `STATUS_SUCCESS` to `main()`:
 ![x64dbg Paused at RestoreAfterSyscall Deallocating 0x68-Byte Synthetic Frame](assets/lab-4.3/06-x64dbg-restore-after-syscall-cleanup.png)
+
+### Key Debugging & Evasion Notes
+1. **`x64dbg` `CallstackCache` Quirk (`F7` Single-Step vs. `F9` Breakpoint):**
+   - In `x64dbg` (`src/dbg/stackinfo.cpp`), unwound call stacks are cached by stack pointer alone (`CallstackCache.find(csp)`). If you single-step (`F7`) over `push qGadgetAddr` inside `DoSpoofedIndirectSyscall`, `x64dbg` caches `DoSpoofedIndirectSyscall+2A` as Frame 0 for that `RSP` value because the subsequent `jmp [qSyscallInsAddr]` does not change `RSP`. Breaking directly on `ntdll!NtAllocateVirtualMemory+12` via `F9` (as shown in Image #4 above) avoids the stale cache entry and displays the true live stack starting at `ntdll.NtAllocateVirtualMemory+12`.
+2. **Single-Frame Spoofing vs. Multi-Frame Stack Truncation (Unbacked Shellcode):**
+   - When executing from a disk-backed `.exe` (`main.exe`), inserting a single synthetic `KernelBase.dll` frame restores a normal `ntdll` $\leftarrow$ `kernelbase` $\leftarrow$ `main.exe` chain.
+   - When executing from **unbacked `Private` memory** (such as a Reflectively Mapped DLL from Module 4.1), full-chain stack spoofers (*SilentMoonwalk*, *Draugr*, *VulcanRaven*) push multiple synthetic frames (`KernelBase.dll` $\rightarrow$ `kernel32!BaseThreadInitThunk` $\rightarrow$ `ntdll!RtlUserThreadStart`) followed by a **`0x0000000000000000` (`NULL`)** return address. Because `RtlVirtualUnwind` terminates when `To == 0x0`, the stack walker stops at `RtlUserThreadStart` and never reaches the unbacked caller frames deeper on the stack.
+
 
